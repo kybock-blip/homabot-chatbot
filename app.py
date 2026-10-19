@@ -35,19 +35,27 @@ st.set_page_config(page_title="HomaBot 제품 안내 챗봇", page_icon="🤖")
 st.title("HomaBot 제품 안내 챗봇")
 
 
-def load_secrets() -> tuple[str, str, str]:
+def get_openai_api_key() -> str:
     try:
-        openai_key = str(st.secrets.get("OPENAI_API_KEY", "")).strip()
-        serp_key = str(
+        return str(st.secrets.get("OPENAI_API_KEY", "")).strip()
+    except Exception:
+        return ""
+
+
+def get_serpapi_key() -> str:
+    try:
+        return str(
             st.secrets.get("SERPAPI_KEY", "") or st.secrets.get("SERPAPI_API_KEY", "")
         ).strip()
-        model = str(st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")).strip() or "gpt-4o-mini"
-        return openai_key, serp_key, model
     except Exception:
-        return "", "", "gpt-4o-mini"
+        return ""
 
 
-OPENAI_API_KEY, SERPAPI_KEY, OPENAI_MODEL = load_secrets()
+def get_openai_model() -> str:
+    try:
+        return str(st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")).strip() or "gpt-4o-mini"
+    except Exception:
+        return "gpt-4o-mini"
 EMBED_MODEL = "text-embedding-3-small"
 PDF_PATH = Path(__file__).parent / "homabot_manual.pdf"
 NOT_FOUND_MSG = "매뉴얼에서 찾을 수 없습니다."
@@ -107,10 +115,11 @@ def build_manual_rag_chain(api_key: str, model_name: str):
 
 
 def answer_manual(question: str) -> tuple[str, list[int]]:
-    if not is_valid_key(OPENAI_API_KEY):
+    openai_key = get_openai_api_key()
+    if not is_valid_key(openai_key):
         return "[설정 오류] OPENAI_API_KEY가 설정되지 않았습니다. Secrets 설정을 확인하세요.", []
     try:
-        rag_chain = build_manual_rag_chain(OPENAI_API_KEY, OPENAI_MODEL)
+        rag_chain = build_manual_rag_chain(openai_key, get_openai_model())
         result = rag_chain.invoke({"input": question})
         answer = (result.get("answer") or "").strip()
         if not answer or NOT_FOUND_MSG in answer:
@@ -156,12 +165,13 @@ def search_with_serpapi(query: str, num_results: int = 5) -> list[SearchResult]:
     query = query.strip()
     if not query:
         raise ValueError("검색 질문을 입력하세요.")
-    if not is_valid_key(SERPAPI_KEY):
+    serp_key = get_serpapi_key()
+    if not is_valid_key(serp_key):
         raise SearchError("SERPAPI_KEY가 설정되지 않았습니다. Secrets 설정을 확인하세요.")
 
     params = {
         "q": query,
-        "api_key": SERPAPI_KEY,
+        "api_key": serp_key,
         "engine": "google",
         "hl": "ko",
         "gl": "kr",
@@ -269,7 +279,8 @@ def generate_answer(state: QAState) -> QAState:
     results = state.get("search_results", [])
     if not results:
         return {"answer": "사용할 수 있는 일반 검색 결과가 없습니다. 검색어를 더 구체적으로 입력하세요."}
-    if not is_valid_key(OPENAI_API_KEY):
+    openai_key = get_openai_api_key()
+    if not is_valid_key(openai_key):
         return {"answer": "[설정 오류] OPENAI_API_KEY가 설정되지 않았습니다. Secrets 설정을 확인하세요."}
 
     references = [{"id": i, **item} for i, item in enumerate(results, start=1)]
@@ -282,9 +293,9 @@ def generate_answer(state: QAState) -> QAState:
         ensure_ascii=False,
     )
     try:
-        client = OpenAI(api_key=OPENAI_API_KEY, timeout=60.0, max_retries=2)
+        client = OpenAI(api_key=openai_key, timeout=60.0, max_retries=2)
         response = client.chat.completions.create(
-            model=OPENAI_MODEL,
+            model=get_openai_model(),
             temperature=0.2,
             max_tokens=1200,
             messages=[
@@ -334,7 +345,7 @@ graph_app = build_graph_app()
 # ==========================================
 # 3. Streamlit 화면 구성 및 실행 흐름
 # ==========================================
-if not is_valid_key(OPENAI_API_KEY) or not is_valid_key(SERPAPI_KEY):
+if not is_valid_key(get_openai_api_key()) or not is_valid_key(get_serpapi_key()):
     st.warning("API 키가 설정되지 않았습니다. `.streamlit/secrets.toml` 또는 배포 환경의 Secrets 설정을 확인하세요.")
 
 source = st.radio("검색 방식", ["매뉴얼", "웹 검색"], horizontal=True)

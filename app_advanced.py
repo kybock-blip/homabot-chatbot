@@ -28,19 +28,27 @@ PDF_PATH = Path(__file__).parent / "homabot_manual.pdf"
 EMBED_MODEL = "text-embedding-3-small"
 
 
-def load_secrets() -> tuple[str, str, str]:
+def get_openai_api_key() -> str:
     try:
-        openai_key = str(st.secrets.get("OPENAI_API_KEY", "")).strip()
-        serp_key = str(
+        return str(st.secrets.get("OPENAI_API_KEY", "")).strip()
+    except Exception:
+        return ""
+
+
+def get_serpapi_key() -> str:
+    try:
+        return str(
             st.secrets.get("SERPAPI_KEY", "") or st.secrets.get("SERPAPI_API_KEY", "")
         ).strip()
-        model = str(st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")).strip() or "gpt-4o-mini"
-        return openai_key, serp_key, model
     except Exception:
-        return "", "", "gpt-4o-mini"
+        return ""
 
 
-OPENAI_API_KEY, SERPAPI_KEY, OPENAI_MODEL = load_secrets()
+def get_openai_model() -> str:
+    try:
+        return str(st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")).strip() or "gpt-4o-mini"
+    except Exception:
+        return "gpt-4o-mini"
 
 
 def is_valid_key(key: str) -> bool:
@@ -145,11 +153,12 @@ def route_question(state: QAState) -> QAState:
         return {"route": "manual", "route_reason": "규칙 분류: 제품 사양/매뉴얼 질의"}
 
     # 규칙으로 판단 불확실할 때 LLM 1-토큰 분류
-    if is_valid_key(OPENAI_API_KEY):
+    openai_key = get_openai_api_key()
+    if is_valid_key(openai_key):
         try:
-            client = OpenAI(api_key=OPENAI_API_KEY, timeout=10.0, max_retries=1)
+            client = OpenAI(api_key=openai_key, timeout=10.0, max_retries=1)
             resp = client.chat.completions.create(
-                model=OPENAI_MODEL,
+                model=get_openai_model(),
                 temperature=0,
                 max_tokens=10,
                 messages=[
@@ -184,10 +193,11 @@ def route_question(state: QAState) -> QAState:
 # ==========================================
 def manual_search_node(state: QAState) -> QAState:
     question = state.get("question", "").strip()
-    if not is_valid_key(OPENAI_API_KEY):
+    openai_key = get_openai_api_key()
+    if not is_valid_key(openai_key):
         return {"error": "OPENAI_API_KEY가 누락되었습니다."}
     try:
-        retriever = get_vector_retriever(OPENAI_API_KEY)
+        retriever = get_vector_retriever(openai_key)
         docs = retriever.invoke(question)
         manual_context: list[ManualDoc] = [
             {"page": int(d.metadata.get("page", 0)) + 1, "content": d.page_content}
@@ -204,7 +214,8 @@ def manual_search_node(state: QAState) -> QAState:
 def web_search_node(state: QAState) -> QAState:
     question = state.get("question", "").strip()
     searched_at = datetime.now(timezone(timedelta(hours=9))).isoformat(timespec="seconds")
-    if not is_valid_key(SERPAPI_KEY):
+    serp_key = get_serpapi_key()
+    if not is_valid_key(serp_key):
         return {
             "search_results": [],
             "searched_at": searched_at,
@@ -213,7 +224,7 @@ def web_search_node(state: QAState) -> QAState:
 
     params = {
         "q": question,
-        "api_key": SERPAPI_KEY,
+        "api_key": serp_key,
         "engine": "google",
         "hl": "ko",
         "gl": "kr",
@@ -285,6 +296,7 @@ def generate_answer_node(state: QAState) -> QAState:
     question = state.get("question", "")
     manual_docs = state.get("manual_context", [])
     web_results = state.get("search_results", [])
+    openai_key = get_openai_api_key()
 
     # 전체 실패 검사
     if route == "web" and error:
@@ -308,9 +320,9 @@ def generate_answer_node(state: QAState) -> QAState:
     }
 
     try:
-        client = OpenAI(api_key=OPENAI_API_KEY, timeout=60.0, max_retries=2)
+        client = OpenAI(api_key=openai_key, timeout=60.0, max_retries=2)
         resp = client.chat.completions.create(
-            model=OPENAI_MODEL,
+            model=get_openai_model(),
             temperature=0.2,
             max_tokens=1200,
             messages=[
@@ -407,7 +419,7 @@ st.set_page_config(page_title="HomaBot 통합 지식 상담 챗봇", page_icon="
 st.title("HomaBot 통합 지식 상담 챗봇")
 st.caption("PDF 매뉴얼 RAG와 실시간 웹 검색(SerpAPI)을 질문에 따라 유연하게 통합 처리합니다.")
 
-if not is_valid_key(OPENAI_API_KEY) or not is_valid_key(SERPAPI_KEY):
+if not is_valid_key(get_openai_api_key()) or not is_valid_key(get_serpapi_key()):
     st.warning("⚠️ API 키가 누락되었거나 유효하지 않습니다. Secrets 설정을 확인하세요.")
 
 col1, col2 = st.columns([4, 1])
