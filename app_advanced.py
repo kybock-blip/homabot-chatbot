@@ -28,31 +28,50 @@ PDF_PATH = Path(__file__).parent / "homabot_manual.pdf"
 EMBED_MODEL = "text-embedding-3-small"
 
 
+import os
+
+
 def get_openai_api_key() -> str:
+    key = ""
     try:
-        return str(st.secrets.get("OPENAI_API_KEY", "")).strip()
+        if hasattr(st, "secrets") and "OPENAI_API_KEY" in st.secrets:
+            key = str(st.secrets["OPENAI_API_KEY"]).strip()
     except Exception:
-        return ""
+        pass
+    if not key:
+        key = os.getenv("OPENAI_API_KEY", "").strip()
+    return key
 
 
 def get_serpapi_key() -> str:
+    key = ""
     try:
-        return str(
-            st.secrets.get("SERPAPI_KEY", "") or st.secrets.get("SERPAPI_API_KEY", "")
-        ).strip()
+        if hasattr(st, "secrets"):
+            key = str(st.secrets.get("SERPAPI_KEY") or st.secrets.get("SERPAPI_API_KEY") or "").strip()
     except Exception:
-        return ""
+        pass
+    if not key:
+        key = (os.getenv("SERPAPI_KEY") or os.getenv("SERPAPI_API_KEY") or "").strip()
+    return key
 
 
 def get_openai_model() -> str:
+    model = "gpt-4o-mini"
     try:
-        return str(st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")).strip() or "gpt-4o-mini"
+        if hasattr(st, "secrets") and "OPENAI_MODEL" in st.secrets:
+            model = str(st.secrets["OPENAI_MODEL"]).strip()
     except Exception:
-        return "gpt-4o-mini"
+        pass
+    if not model:
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
+    return model or "gpt-4o-mini"
 
 
 def is_valid_key(key: str) -> bool:
-    return bool(key) and not key.startswith(("운영팀에서_", "실제 "))
+    if not key or not isinstance(key, str):
+        return False
+    k = key.strip().strip('"').strip("'")
+    return len(k) > 10 and not k.startswith(("운영팀에서_", "실제 "))
 
 
 def openai_error_message(exc: Exception) -> str:
@@ -419,8 +438,18 @@ st.set_page_config(page_title="HomaBot 통합 지식 상담 챗봇", page_icon="
 st.title("HomaBot 통합 지식 상담 챗봇")
 st.caption("PDF 매뉴얼 RAG와 실시간 웹 검색(SerpAPI)을 질문에 따라 유연하게 통합 처리합니다.")
 
+openai_status = "✅ 설정됨" if is_valid_key(get_openai_api_key()) else "❌ 미설정"
+serp_status = "✅ 설정됨" if is_valid_key(get_serpapi_key()) else "❌ 미설정"
+
+with st.sidebar:
+    st.subheader("🔑 API 키 설정 상태")
+    st.write(f"- OpenAI: {openai_status}")
+    st.write(f"- SerpAPI: {serp_status}")
+    if not is_valid_key(get_openai_api_key()) or not is_valid_key(get_serpapi_key()):
+        st.info("Streamlit 대시보드의 Settings -> Secrets에 키가 올바르게 입력되었는지 확인하세요.")
+
 if not is_valid_key(get_openai_api_key()) or not is_valid_key(get_serpapi_key()):
-    st.warning("⚠️ API 키가 누락되었거나 유효하지 않습니다. Secrets 설정을 확인하세요.")
+    st.warning(f"⚠️ API 키 설정 상태를 확인하세요 (OpenAI: {openai_status}, SerpAPI: {serp_status})")
 
 col1, col2 = st.columns([4, 1])
 with col1:
