@@ -110,6 +110,8 @@ class QAState(TypedDict, total=False):
     user_mode: str  # "자동 선택", "매뉴얼 검색", "웹 검색", "매뉴얼과 웹 검색 비교"
     route: str  # "manual", "web", "compare"
     route_reason: str
+    openai_key: str
+    serp_key: str
     manual_context: list[ManualDoc]
     search_results: list[SearchResult]
     searched_at: str
@@ -212,7 +214,7 @@ def route_question(state: QAState) -> QAState:
 # ==========================================
 def manual_search_node(state: QAState) -> QAState:
     question = state.get("question", "").strip()
-    openai_key = get_openai_api_key()
+    openai_key = state.get("openai_key") or get_openai_api_key()
     if not is_valid_key(openai_key):
         return {"error": "OPENAI_API_KEY가 누락되었습니다."}
     try:
@@ -233,12 +235,12 @@ def manual_search_node(state: QAState) -> QAState:
 def web_search_node(state: QAState) -> QAState:
     question = state.get("question", "").strip()
     searched_at = datetime.now(timezone(timedelta(hours=9))).isoformat(timespec="seconds")
-    serp_key = get_serpapi_key()
+    serp_key = state.get("serp_key") or get_serpapi_key()
     if not is_valid_key(serp_key):
         return {
             "search_results": [],
             "searched_at": searched_at,
-            "error": "SERPAPI_KEY가 설정되지 않았습니다.",
+            "error": "SERPAPI_KEY가 설정되지 않았습니다 (키 길이 또는 형식 확인 필요).",
         }
 
     params = {
@@ -315,7 +317,7 @@ def generate_answer_node(state: QAState) -> QAState:
     question = state.get("question", "")
     manual_docs = state.get("manual_context", [])
     web_results = state.get("search_results", [])
-    openai_key = get_openai_api_key()
+    openai_key = state.get("openai_key") or get_openai_api_key()
 
     # 전체 실패 검사
     if route == "web" and error:
@@ -490,6 +492,8 @@ if raw_input is not None:
                 initial_state: QAState = {
                     "question": question,
                     "user_mode": user_mode,
+                    "openai_key": get_openai_api_key(),
+                    "serp_key": get_serpapi_key(),
                     "manual_context": [],
                     "search_results": [],
                     "searched_at": "",
