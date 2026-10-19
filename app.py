@@ -35,27 +35,43 @@ st.set_page_config(page_title="HomaBot 제품 안내 챗봇", page_icon="🤖")
 st.title("HomaBot 제품 안내 챗봇")
 
 
+import os
+
+
 def get_openai_api_key() -> str:
+    key = ""
     try:
-        return str(st.secrets.get("OPENAI_API_KEY", "")).strip()
+        if hasattr(st, "secrets") and "OPENAI_API_KEY" in st.secrets:
+            key = str(st.secrets["OPENAI_API_KEY"]).strip()
     except Exception:
-        return ""
+        pass
+    if not key:
+        key = os.getenv("OPENAI_API_KEY", "").strip()
+    return key
 
 
 def get_serpapi_key() -> str:
+    key = ""
     try:
-        return str(
-            st.secrets.get("SERPAPI_KEY", "") or st.secrets.get("SERPAPI_API_KEY", "")
-        ).strip()
+        if hasattr(st, "secrets"):
+            key = str(st.secrets.get("SERPAPI_KEY") or st.secrets.get("SERPAPI_API_KEY") or "").strip()
     except Exception:
-        return ""
+        pass
+    if not key:
+        key = (os.getenv("SERPAPI_KEY") or os.getenv("SERPAPI_API_KEY") or "").strip()
+    return key
 
 
 def get_openai_model() -> str:
+    model = "gpt-4o-mini"
     try:
-        return str(st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")).strip() or "gpt-4o-mini"
+        if hasattr(st, "secrets") and "OPENAI_MODEL" in st.secrets:
+            model = str(st.secrets["OPENAI_MODEL"]).strip()
     except Exception:
-        return "gpt-4o-mini"
+        pass
+    if not model:
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
+    return model or "gpt-4o-mini"
 EMBED_MODEL = "text-embedding-3-small"
 PDF_PATH = Path(__file__).parent / "homabot_manual.pdf"
 NOT_FOUND_MSG = "매뉴얼에서 찾을 수 없습니다."
@@ -378,16 +394,21 @@ if raw_question is not None:
                     else:
                         full_reply = answer
                 else:
-                    state = graph_app.invoke(
-                        {
+                    try:
+                        serp_results = search_with_serpapi(question, num_results=5)
+                        qa_state = {
                             "question": question,
-                            "search_results": [],
-                            "searched_at": "",
+                            "search_results": serp_results,
+                            "searched_at": datetime.now(timezone(timedelta(hours=9))).isoformat(timespec="seconds"),
                             "answer": "",
                             "error": "",
                         }
-                    )
-                    full_reply = state["answer"]
+                        ans_state = generate_answer(qa_state)
+                        full_reply = ans_state.get("answer", "")
+                    except SearchError as se:
+                        full_reply = f"[검색 실패] {se}"
+                    except Exception as ge:
+                        full_reply = f"[실행 오류] {ge}"
 
             st.markdown(full_reply)
             st.session_state.messages.append({"role": "assistant", "content": full_reply})
